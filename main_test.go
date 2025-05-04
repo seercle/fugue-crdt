@@ -1,4 +1,4 @@
-package fugue
+package main
 
 import (
 	"testing"

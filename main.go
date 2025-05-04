@@ -1,4 +1,4 @@
-package fugue
+package main
 
 import (
 	"errors"
@@ -185,7 +185,9 @@ func (doc *Doc) localInsertOne(client Client, position int, content Content) err
 	}
 	var origin_left *Id = nil
 	var origin_right *Id = nil
-	if item != nil && item.prev != nil {
+	if item == nil && doc.content.tail != nil {
+		origin_left = &doc.content.tail.item.id
+	} else if item != nil && item.prev != nil {
 		origin_left = &item.prev.item.id
 	}
 	if item != nil {
@@ -294,5 +296,24 @@ func (dest *Doc) mergeFrom(from *Doc) error {
 	return nil
 }
 
+func (doc *Doc) debugPrint() {
+	for item := doc.content.head; item != nil; item = item.next {
+		fmt.Printf("Content: '%s' ID: {client: %d, seq: %d} Origins: left=%v, right=%v\n",
+			item.item.content,
+			item.item.id.client,
+			item.item.id.seq,
+			item.item.origin_left,
+			item.item.origin_right)
+	}
+	fmt.Println("---")
+}
+
 func main() {
+	doc := newDoc()
+	doc.localInsertOne(1, 0, "H")
+	doc.localInsertOne(1, 1, "e")
+	doc.localInsertOne(1, 2, "l")
+	doc.localInsertOne(1, 3, "l")
+	doc.localInsertOne(1, 4, "o")
+	doc.debugPrint()
 }
