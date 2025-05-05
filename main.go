@@ -20,7 +20,7 @@ type Item struct {
 	origin_left  *Id
 	origin_right *Id
 	deleted      bool
-	content      Content
+	content      Content // Now multiple characters
 }
 
 type LinkedItem struct {
@@ -310,10 +310,14 @@ func (doc *Doc) debugPrint() {
 
 func main() {
 	doc := newDoc()
+	doc2 := newDoc()
 	doc.localInsertOne(1, 0, "H")
 	doc.localInsertOne(1, 1, "e")
-	doc.localInsertOne(1, 2, "l")
-	doc.localInsertOne(1, 3, "l")
-	doc.localInsertOne(1, 4, "o")
+
+	doc2.mergeFrom(doc)
+	doc.localDelete(1, 1)
+	doc2.localInsertOne(1, 2, "l")
+	doc.mergeFrom(doc2)
+
 	doc.debugPrint()
 }
