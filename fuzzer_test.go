@@ -1,13 +1,10 @@
 package main
 
 import (
+	"math"
 	"math/rand"
 	"testing"
 )
-
-func RandomDoc(rng *rand.Rand, docs []*Doc) *Doc {
-	return docs[rng.Intn(len(docs))]
-}
 
 func TestFuzzer(t *testing.T) {
 	const trials int64 = 1
@@ -18,7 +15,8 @@ func TestFuzzer(t *testing.T) {
 		docs := []*Doc{newDoc(), newDoc(), newDoc()}
 		for j := 0; j < 100; j++ {
 			for d := 0; d < len(docs); d++ {
-				doc := RandomDoc(rng, docs)
+				i := rng.Intn(len(docs))
+				doc := docs[i]
 				len := doc.content.length
 				var weight float32 = 0.65
 				if len > 100 {
@@ -28,19 +26,15 @@ func TestFuzzer(t *testing.T) {
 					//insert
 					position := rng.Intn(len + 1)
 					rune := chars[rng.Intn(chars_len)]
-					client := Client(rng.Intn(3))
-					doc.localInsertOne(client, position, Content(rune))
+					doc.localInsertOne(Client(i), position, Content(rune))
 				} else {
 					//delete
 					position := rng.Intn(len + 1)
-					length := rng.Intn(math.min(len - position + 1))
+					length := rng.Intn(int(math.Min(float64(len-position+1), float64(3))))
 					doc.localDelete(position, length)
 				}
 			}
 		}
-		docs[0].debugPrint()
-		docs[1].debugPrint()
-		docs[2].debugPrint()
 		// Pick 2 random documents to merge
 		rand.Shuffle(len(docs), func(i, j int) { docs[i], docs[j] = docs[j], docs[i] })
 		doc1 := docs[0]

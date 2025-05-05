@@ -298,12 +298,13 @@ func (dest *Doc) mergeFrom(from *Doc) error {
 
 func (doc *Doc) debugPrint() {
 	for item := doc.content.head; item != nil; item = item.next {
-		fmt.Printf("Content: '%s' ID: {client: %d, seq: %d} Origins: left=%v, right=%v\n",
+		fmt.Printf("Content: '%s' ID: {client: %d, seq: %d} Origins: left=%v, right=%v Deleted=%t\n",
 			item.item.content,
 			item.item.id.client,
 			item.item.id.seq,
 			item.item.origin_left,
-			item.item.origin_right)
+			item.item.origin_right,
+			item.item.deleted)
 	}
 	fmt.Println("---")
 }
@@ -315,8 +316,9 @@ func main() {
 	doc.localInsertOne(1, 1, "e")
 
 	doc2.mergeFrom(doc)
+
 	doc.localDelete(1, 1)
-	doc2.localInsertOne(1, 2, "l")
+	doc2.localInsertOne(2, 2, "l")
 	doc.mergeFrom(doc2)
 
 	doc.debugPrint()
