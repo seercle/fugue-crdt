@@ -13,8 +13,8 @@ func TestFuzzer(t *testing.T) {
 	for i := range trials {
 		rng := rand.New(rand.NewSource(i))
 		docs := []*Doc{newDoc(), newDoc(), newDoc()}
-		for j := 0; j < 100; j++ {
-			for d := 0; d < len(docs); d++ {
+		for range 100 {
+			for range len(docs) {
 				i := rng.Intn(len(docs))
 				doc := docs[i]
 				len := doc.content.length
