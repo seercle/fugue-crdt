@@ -82,43 +82,74 @@ func (doc *Doc) findItemFromId(id *Id) (*LinkedItem, int, error) {
 			i += len(linked_item.item.content) // skip to the next item
 		}
 	}
-	return nil, -1, errors.New("item not found")
+	return nil, -1, ErrNotFound
 }
 
-func (doc *Doc) findItemAt(position int, stickEnd bool) (*LinkedItem, error) {
+func (doc *Doc) findItemAt(position int, stick_end bool) (*LinkedItem, int, *OutOfBoundErr) {
 	for item := doc.content.head; item != nil; item = item.next {
-		if stickEnd && len(item.item.content) > position { // the item is contained in the linked_item
-			return item, nil
+		if stick_end && len(item.item.content) > position { // the item is contained in the linked_item
+			return item, position, nil
 		} else if item.item.deleted { // skip deleted items without counting them
 			continue
 		} else if len(item.item.content) > position { // the item is contained in the linked_item
-			return item, nil
+			return item, position, nil
 		}
 		position -= len(item.item.content) // skip to the next item
 	}
-	return nil, errors.New("item not found")
+	return nil, -1, &OutOfBoundErr{position}
 }
 
-/*
-func (doc *Doc) nextItem(item *LinkedItem, position int) (new_item *LinkedItem, new_position int, left_position int, right_position int, err error) {
-	if(item == nil) {
-		return nil, -1, -1, -1, errors.New("item is nil")
+func (doc *Doc) localInsertOne(client Client, position int, content Content) error {
+	var origin_left *Id = nil
+	var origin_right *Id = nil
+	item, item_position, err := doc.findItemAt(position, true)
+	if err != nil && err.overflow > 0 { // we allow an overflow of 1
+		return fmt.Errorf("item not found: %w", err)
 	}
-	if position >= len(item.item.content) - 1 { // end of item, go to next
-		if item.next == nil { // end of list
-			return nil, -1, -1, -1, nil
-		}
-		new_item = item.next
-		new_position = 0
-
-		if err != nil {
-			return nil, -1, -1, -1, fmt.Errorf("origin_left not found: %w", err)
-		}
-
-		return item.next, 0,
+	var seq Seq = 0
+	if val, ok := doc.version[client]; ok {
+		seq = val + 1
 	}
+
+	// Find the left and right origins
+	if item == nil {
+		if doc.content.tail != nil { // if we insert at the end
+			origin_left = &doc.content.tail.item.id
+		}
+	} else { // if we insert in the middle
+		// id of the item we found at the position
+		// it will be the right origin
+		origin_right = &Id{
+			client: item.item.id.client,
+			seq:    item.item.id.seq + Seq(item_position),
+		}
+		if item_position == 0 { // if we insert at the beginning of the itemQ
+			if item.prev != nil { // if we insert after something
+				prev_id := item.prev.item.id
+				origin_left = &Id{
+					client: prev_id.client,
+					seq:    prev_id.seq + Seq(len(item.prev.item.content)-1), // the right most item of the previous item
+				}
+			}
+		} else { // if we insert in the middle of the item
+			origin_left = &Id{
+				client: item.item.id.client,
+				seq:    item.item.id.seq + Seq(item_position-1),
+			}
+		}
+	}
+
+	return doc.integrate(Item{
+		id: Id{
+			client,
+			seq,
+		},
+		origin_left:  origin_left,
+		origin_right: origin_right,
+		deleted:      false,
+		content:      content,
+	})
 }
-*/
 
 func (doc *Doc) integrate(item Item) error {
 	id := item.id
@@ -199,37 +230,6 @@ func (doc *Doc) integrate(item Item) error {
 	dest_item.prev.next = new_item
 	dest_item.prev = new_item
 	return nil
-}
-
-func (doc *Doc) localInsertOne(client Client, position int, content Content) error {
-	item, err := doc.findItemAt(position, true)
-	if err != nil {
-		return fmt.Errorf("item not found: %w", err)
-	}
-	var origin_left *Id = nil
-	var origin_right *Id = nil
-	if item == nil && doc.content.tail != nil {
-		origin_left = &doc.content.tail.item.id
-	} else if item != nil && item.prev != nil {
-		origin_left = &item.prev.item.id
-	}
-	if item != nil {
-		origin_right = &item.item.id
-	}
-	var seq Seq = 0
-	if val, ok := doc.version[client]; ok {
-		seq = val + 1
-	}
-	return doc.integrate(Item{
-		id: Id{
-			client,
-			seq,
-		},
-		origin_left:  origin_left,
-		origin_right: origin_right,
-		deleted:      false,
-		content:      content,
-	})
 }
 
 func isInVersion(id *Id, version *Version) bool {
