@@ -61,23 +61,64 @@ func (doc *Doc) getContent() Content {
 	return content
 }
 
-func (a *Id) idEq(b *Id) bool {
-	return a == b || (a != nil && b != nil && a.client == b.client && a.seq == b.seq)
-}
-
-func (doc *Doc) findItem(id *Id) (*LinkedItem, int, error) {
+/**
+ * Return the position in the document of the item with the given id.
+ * The LinkedItem returned contains the item with the given id
+ * Return -1 if the item is nil
+ */
+func (doc *Doc) findItemFromId(id *Id) (*LinkedItem, int, error) {
 	if id == nil {
 		return nil, -1, nil
 	}
-	i := -1
+	i := 0
 	for linked_item := doc.content.head; linked_item != nil; linked_item = linked_item.next {
-		i++
-		if linked_item.item.id.idEq(id) {
-			return linked_item, i, nil
+		if linked_item.item.id.client != id.client { // different client
+			i += len(linked_item.item.content)
+		} else {
+			if linked_item.item.id.seq >= id.seq &&
+				id.seq <= linked_item.item.id.seq+Seq(len(linked_item.item.content)-1) { // the item is contained in the linked_item
+				return linked_item, i + int(id.seq-linked_item.item.id.seq), nil
+			}
+			i += len(linked_item.item.content) // skip to the next item
 		}
 	}
 	return nil, -1, errors.New("item not found")
 }
+
+func (doc *Doc) findItemAt(position int, stickEnd bool) (*LinkedItem, error) {
+	for item := doc.content.head; item != nil; item = item.next {
+		if stickEnd && len(item.item.content) > position { // the item is contained in the linked_item
+			return item, nil
+		} else if item.item.deleted { // skip deleted items without counting them
+			continue
+		} else if len(item.item.content) > position { // the item is contained in the linked_item
+			return item, nil
+		}
+		position -= len(item.item.content) // skip to the next item
+	}
+	return nil, errors.New("item not found")
+}
+
+/*
+func (doc *Doc) nextItem(item *LinkedItem, position int) (new_item *LinkedItem, new_position int, left_position int, right_position int, err error) {
+	if(item == nil) {
+		return nil, -1, -1, -1, errors.New("item is nil")
+	}
+	if position >= len(item.item.content) - 1 { // end of item, go to next
+		if item.next == nil { // end of list
+			return nil, -1, -1, -1, nil
+		}
+		new_item = item.next
+		new_position = 0
+
+		if err != nil {
+			return nil, -1, -1, -1, fmt.Errorf("origin_left not found: %w", err)
+		}
+
+		return item.next, 0,
+	}
+}
+*/
 
 func (doc *Doc) integrate(item Item) error {
 	id := item.id
@@ -89,7 +130,7 @@ func (doc *Doc) integrate(item Item) error {
 		return errors.New("invalid sequence number")
 	}
 	doc.version[id.client] = id.seq
-	left_item, left_index, err := doc.findItem(item.origin_left)
+	left_item, left_index, err := doc.findItemFromId(item.origin_left)
 	if err != nil {
 		return fmt.Errorf("origin_left not found: %w", err)
 	}
@@ -100,7 +141,7 @@ func (doc *Doc) integrate(item Item) error {
 	var right_item *LinkedItem = nil
 	right_index := doc.content.length
 	if item.origin_right != nil {
-		right_item, right_index, err = doc.findItem(item.origin_right)
+		right_item, right_index, err = doc.findItemFromId(item.origin_right)
 		if err != nil {
 			return fmt.Errorf("origin_right not found: %w", err)
 		}
@@ -113,13 +154,13 @@ func (doc *Doc) integrate(item Item) error {
 		if other == nil || other == right_item {
 			break
 		}
-		_, oleft_index, err := doc.findItem(other.item.origin_left)
+		_, oleft_index, err := doc.findItemFromId(other.item.origin_left)
 		if err != nil {
 			return fmt.Errorf("origin_left not found: %w", err)
 		}
 		oright_index := doc.content.length
 		if other.item.origin_right != nil {
-			_, oright_index, err = doc.findItem(other.item.origin_right)
+			_, oright_index, err = doc.findItemFromId(other.item.origin_right)
 			if err != nil {
 				return fmt.Errorf("origin_right not found: %w", err)
 			}
@@ -158,24 +199,6 @@ func (doc *Doc) integrate(item Item) error {
 	dest_item.prev.next = new_item
 	dest_item.prev = new_item
 	return nil
-}
-
-func (doc *Doc) findItemAt(position int, stickEnd bool) (*LinkedItem, error) {
-	item := doc.content.head
-	for ; item != nil; item = item.next {
-		if stickEnd && position == 0 {
-			return item, nil
-		} else if item.item.deleted {
-			continue
-		} else if position == 0 {
-			return item, nil
-		}
-		position--
-	}
-	if position == 0 {
-		return item, nil
-	}
-	return nil, errors.New("item not found")
 }
 
 func (doc *Doc) localInsertOne(client Client, position int, content Content) error {
