@@ -10,7 +10,7 @@ type OutOfBoundErr struct {
 }
 
 func (err *OutOfBoundErr) Error() string {
-	return fmt.Sprint("object out of bound by %d", err.overflow)
+	return fmt.Sprintf("object out of bound by %d", err.overflow)
 }
 
 var (
