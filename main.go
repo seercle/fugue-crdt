@@ -150,6 +150,7 @@ func (doc *Doc) localInsertOne(client Client, position int, content Content) err
 			}
 		}
 	}
+	fmt.Println(origin_left, origin_right)
 	return doc.integrate(Item{
 		id: Id{
 			client,
@@ -178,7 +179,7 @@ func (doc *Doc) localDelete(position int, length int) error {
 				seq:    item.item.id.seq,
 			},
 			origin_left:  item.item.origin_left,
-			origin_right: nil,
+			origin_right: item.item.origin_right,
 			deleted:      false,
 			content:      item.item.content[:item_position],
 		}
@@ -276,7 +277,7 @@ func (doc *Doc) localDelete(position int, length int) error {
 							seq:    item.item.id.seq,
 						},
 						origin_left:  item.item.origin_left,
-						origin_right: nil,
+						origin_right: item.item.origin_right,
 						deleted:      true,
 						content:      item.item.content[:length],
 					}
@@ -449,6 +450,9 @@ func (doc *Doc) integrate(item Item) error {
 
 	// Put the item in the list before the destination item
 	new_item := &LinkedItem{item: item}
+	if dest_item != nil {
+		fmt.Println(dest_item.item.id, position)
+	}
 	if doc.content.head == nil { // insert in an empty list
 		doc.content.length++
 		doc.content.head = new_item
@@ -474,7 +478,6 @@ func (doc *Doc) integrate(item Item) error {
 		doc.content.head = new_item
 		return nil
 	}
-
 	// insert in the middle
 	if position == 0 { // insert before the destination item
 
@@ -490,6 +493,7 @@ func (doc *Doc) integrate(item Item) error {
 		dest_item.prev = new_item
 		return nil
 	} else { //insert in the middle of the destination item
+
 		left_split_item := Item{
 			id: Id{
 				client: dest_item.item.id.client,
@@ -500,6 +504,7 @@ func (doc *Doc) integrate(item Item) error {
 			deleted:      dest_item.item.deleted,
 			content:      dest_item.item.content[:int(position)],
 		}
+		fmt.Println(left_split_item.id, left_split_item.content, left_split_item.origin_left, left_split_item.origin_right)
 		left_split := &LinkedItem{
 			item: left_split_item,
 			prev: dest_item.prev,
@@ -507,8 +512,10 @@ func (doc *Doc) integrate(item Item) error {
 		}
 		new_item.prev = left_split
 		new_item.next = dest_item
-
-		if doc.content.head.item.id == dest_item.item.id { // update the head if we are at the beginning
+		fmt.Println(new_item.item.id, new_item.item.content, new_item.item.origin_left, new_item.item.origin_right)
+		if dest_item.prev != nil {
+			dest_item.prev.next = left_split
+		} else {
 			doc.content.head = left_split
 		}
 
@@ -519,7 +526,7 @@ func (doc *Doc) integrate(item Item) error {
 			client: left_split.item.id.client,
 			seq:    left_split.item.id.seq + Seq(len(left_split.item.content)-1),
 		}
-
+		fmt.Println(dest_item.item.id, dest_item.item.content, dest_item.item.origin_left, dest_item.item.origin_right)
 		return nil
 	}
 }
@@ -601,7 +608,19 @@ func main() {
 	/*doc1.localInsertOne(1, 0, "abc")
 	doc1.localDelete(2, 1)
 	doc1.localDelete(0, 2)*/
+	/*doc1.localInsertOne(1, 0, "def")
+	doc1.localInsertOne(1, 0, "abc")
+	doc1.localDelete(2, 2)
+	doc1.debugPrint()
+	doc1.localInsertOne(1, 3, "ghi")*/
+	doc1.localInsertOne(1, 0, "ab")
+	doc1.debugPrint()
+	doc1.localDelete(1, 1)
 
+	doc1.debugPrint()
+	doc1.localInsertOne(1, 1, "c")
+	doc1.debugPrint()
+	doc1.localDelete(0, 1)
 	doc1.debugPrint()
 
 }
