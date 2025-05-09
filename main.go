@@ -483,8 +483,6 @@ func (doc *Doc) integrate(item Item) error {
 			return nil
 		}
 
-		fmt.Println("eyo")
-
 		doc.content.length++
 		new_item.prev = dest_item.prev
 		new_item.next = dest_item
