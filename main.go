@@ -30,7 +30,8 @@ type LinkedItem struct {
 }
 
 type LinkedList struct {
-	length int
+	length int // length of the list
+	count  int // number of items in the list (this is not the same as length, this is the total number of characters)
 	head   *LinkedItem
 	tail   *LinkedItem
 }
@@ -150,7 +151,6 @@ func (doc *Doc) localInsertOne(client Client, position int, content Content) err
 			}
 		}
 	}
-	fmt.Println(origin_left, origin_right)
 	return doc.integrate(Item{
 		id: Id{
 			client,
@@ -319,16 +319,13 @@ func (doc *Doc) localDelete(position int, length int) error {
 }
 
 // Return the part of the item that is not in the version, nil if the item is fully in the version
-func cropInVersion(item *Item, version *Version) *Item {
-	if item == nil {
-		return nil
-	}
+func cropOutVersion(item Item, version *Version) (Item, error) {
 	if seq, ok := (*version)[item.id.client]; ok {
 		if seq >= item.id.seq+Seq(len(item.content)-1) { // item is fully in the version
-			return nil
+			return Item{}, errors.New("item is fully in the version")
 		}
 		if seq < item.id.seq { // item is fully out of the version
-			return item
+			return item, nil
 		}
 		// item is partially in the version
 		crop := item
@@ -338,9 +335,9 @@ func cropInVersion(item *Item, version *Version) *Item {
 			client: item.id.client,
 			seq:    seq,
 		}
-		return crop
+		return crop, nil
 	}
-	return item
+	return item, nil
 }
 
 func isInVersion(id *Id, version *Version) bool {
@@ -368,6 +365,7 @@ func (doc *Doc) remoteInsert(item Item) {
 }
 
 func (doc *Doc) integrate(item Item) error {
+	//fmt.Println(item.content)
 	id := item.id
 	var prev_seq Seq = -1
 	if val, ok := doc.version[id.client]; ok {
@@ -377,9 +375,9 @@ func (doc *Doc) integrate(item Item) error {
 		return errors.New("invalid sequence number")
 	}
 	doc.version[id.client] = id.seq + Seq(len(item.content)-1) // the version also increase with the length of the item
-
+	//fmt.Println("Searching for", item.origin_left)
 	left_item, left_index, err := doc.findItemFromId(item.origin_left)
-
+	//fmt.Println("Left item", left_item, left_index)
 	if err != nil {
 		return fmt.Errorf("origin_left not found: %w", err)
 	}
@@ -394,20 +392,21 @@ func (doc *Doc) integrate(item Item) error {
 			position = 0
 		}
 	}
+
 	var right_item *LinkedItem = nil
-	right_index := doc.content.length
+	right_index := doc.content.count
 	if item.origin_right != nil {
 		right_item, right_index, err = doc.findItemFromId(item.origin_right)
 		if err != nil {
 			return fmt.Errorf("origin_right not found: %w", err)
 		}
 	}
+	//fmt.Println("Right index: ", right_item, right_index)
 	scanning := false
-	if dest_item != nil {
-		//fmt.Println(dest_item.item.id)
-	}
 	for other := dest_item; ; other = other.next {
+		//fmt.Println("Other", other)
 		if !scanning {
+			//fmt.Println("Considering position")
 			dest_item = other
 		}
 		//fmt.Println("X")
@@ -417,21 +416,30 @@ func (doc *Doc) integrate(item Item) error {
 
 		//fmt.Println("Y")
 		_, oleft_index, err := doc.findItemFromId(other.item.origin_left)
+		//fmt.Println("oleft: ", oleft_index)
 		oleft_index += int(position)
 		if err != nil {
 			return fmt.Errorf("origin_left not found: %w", err)
 		}
-		oright_index := doc.content.length
+		//fmt.Println(doc.content.length)
+		oright_index := doc.content.count
 		if other.item.origin_right != nil {
+			//fmt.Println("origin_right", other.item.origin_right)
 			_, oright_index, err = doc.findItemFromId(other.item.origin_right)
+			//fmt.Println("oright: ", oright_index)
 			if err != nil {
 				return fmt.Errorf("origin_right not found: %w", err)
 			}
 		}
 		//fmt.Println("A")
+		//fmt.Println(oleft_index, left_index, oright_index, right_index)
 		if oleft_index < left_index || (oleft_index == left_index && oright_index == right_index && item.id.client < other.item.id.client) {
+			//fmt.Println("Position found")
 			break
-		}
+		} /*  else {
+			fmt.Println("Not found")
+			//fmt.Println(oleft_index, left_index, oright_index, right_index)
+		}*/
 		//fmt.Println("B")
 		if oleft_index == left_index {
 			scanning = oright_index < right_index
@@ -450,9 +458,10 @@ func (doc *Doc) integrate(item Item) error {
 
 	// Put the item in the list before the destination item
 	new_item := &LinkedItem{item: item}
-	if dest_item != nil {
-		fmt.Println(dest_item.item.id, position)
-	}
+	doc.content.count += len(item.content)
+
+	//fmt.Println(new_item.item.content, dest_item, position)
+
 	if doc.content.head == nil { // insert in an empty list
 		doc.content.length++
 		doc.content.head = new_item
@@ -504,7 +513,7 @@ func (doc *Doc) integrate(item Item) error {
 			deleted:      dest_item.item.deleted,
 			content:      dest_item.item.content[:int(position)],
 		}
-		fmt.Println(left_split_item.id, left_split_item.content, left_split_item.origin_left, left_split_item.origin_right)
+		//fmt.Println(left_split_item.id, left_split_item.content, left_split_item.origin_left, left_split_item.origin_right)
 		left_split := &LinkedItem{
 			item: left_split_item,
 			prev: dest_item.prev,
@@ -512,7 +521,7 @@ func (doc *Doc) integrate(item Item) error {
 		}
 		new_item.prev = left_split
 		new_item.next = dest_item
-		fmt.Println(new_item.item.id, new_item.item.content, new_item.item.origin_left, new_item.item.origin_right)
+		//fmt.Println(new_item.item.id, new_item.item.content, new_item.item.origin_left, new_item.item.origin_right)
 		if dest_item.prev != nil {
 			dest_item.prev.next = left_split
 		} else {
@@ -526,7 +535,8 @@ func (doc *Doc) integrate(item Item) error {
 			client: left_split.item.id.client,
 			seq:    left_split.item.id.seq + Seq(len(left_split.item.content)-1),
 		}
-		fmt.Println(dest_item.item.id, dest_item.item.content, dest_item.item.origin_left, dest_item.item.origin_right)
+		//fmt.Println(dest_item.item.id, dest_item.item.content, dest_item.item.origin_left, dest_item.item.origin_right)
+		doc.content.length += 2
 		return nil
 	}
 }
@@ -542,12 +552,21 @@ func canMerge(prev *LinkedItem, new *LinkedItem) bool {
 		prev.item.id.seq+Seq(len(prev.item.content)) == new.item.id.seq
 }
 
+func (source *Item) contains(item *Item) bool {
+	/*fmt.Println(source.id.client, source.id.seq, item.id.client, item.id.seq)
+	fmt.Println(max(source.id.seq, item.id.seq))
+	fmt.Println(min(source.id.seq+Seq(len(source.content)-1), item.id.seq+Seq(len(item.content)-1)))
+	fmt.Println("------")*/
+	return source.id.client == item.id.client &&
+		max(source.id.seq, item.id.seq) <= min(source.id.seq+Seq(len(source.content)-1), item.id.seq+Seq(len(item.content)-1))
+}
+
 func (dest *Doc) mergeFrom(from *Doc) error {
 	// Handle insertions
 	var missing []Item
 	for linked_item := from.content.head; linked_item != nil; linked_item = linked_item.next {
-		if cropped := cropInVersion(&linked_item.item, &dest.version); cropped != nil {
-			missing = append(missing, *cropped)
+		if cropped, err := cropOutVersion(linked_item.item, &dest.version); err == nil {
+			missing = append(missing, cropped)
 		}
 	}
 	remaining := len(missing)
@@ -558,6 +577,7 @@ func (dest *Doc) mergeFrom(from *Doc) error {
 			if !dest.canInsertNow(&item) {
 				continue
 			}
+			//fmt.Printf("Inserting %s %s\n", item.id, item.content)
 			dest.remoteInsert(item)
 			missing = slices.Delete(missing, i, i)
 			remaining--
@@ -567,22 +587,198 @@ func (dest *Doc) mergeFrom(from *Doc) error {
 			return errors.New("deadlock")
 		}
 	}
-	/*
-		// Handle deletions
-		dest_item := dest.content.head
-		for from_item := from.content.head; from_item != nil; from_item = from_item.next {
-			for dest_item != nil && !from_item.item.id.idEq(&dest_item.item.id) {
-				dest_item = dest_item.next
-			}
-			if dest_item == nil {
-				break
-			}
-			if from_item.item.deleted {
-				dest_item.item.deleted = true
-			}
-			dest_item = dest_item.next
+
+	//dest.debugPrint()
+
+	// Handle deletions
+	// At this point dest contains all the items from from
+	// But from can have deletions that are not in dest
+	// We need to find these items in dest and mark them as deleted, splitting them if necessary
+	// The deletions can be a part of an item in dest
+	// from is bigger than dest
+
+	//dest_item := dest.content.head
+	for from_item := from.content.head; from_item != nil; from_item = from_item.next {
+		if !from_item.item.deleted { // Skip deleted items
+			continue
 		}
-	*/
+		for dest_item := dest.content.head; dest_item != nil; dest_item = dest_item.next {
+			/*fmt.Println("<>")
+			fmt.Println(from_item.item.content)
+			fmt.Println(dest_item.item.content)*/
+			if !dest_item.item.deleted && from_item.item.contains(&dest_item.item) {
+				// Split the item into  thee parts, before, the deleted part and after
+				//fmt.Println(dest_item.item.id.seq, from_item.item.id.seq)
+				left_item_count := max(from_item.item.id.seq-dest_item.item.id.seq, 0)
+				left_split_item := Item{
+					id: Id{
+						client: dest_item.item.id.client,
+						seq:    dest_item.item.id.seq,
+					},
+					origin_left:  dest_item.item.origin_left,
+					origin_right: dest_item.item.origin_right,
+					deleted:      false,
+					content:      dest_item.item.content[:left_item_count],
+				}
+				//content_left_index := content_right_index + dest_item.item.id.seq + Seq(len(dest_item.item.content)) - (from_item.item.id.seq + Seq(len(from_item.item.content)))
+				deleted_item_index := Seq(len(dest_item.item.content)) + min(from_item.item.id.seq+Seq(len(from_item.item.content))-dest_item.item.id.seq-Seq(len(dest_item.item.content)), 0)
+				//fmt.Println(left_item_count, deleted_item_index)
+				deleted_item := Item{
+					id: Id{
+						client: dest_item.item.id.client,
+						seq:    dest_item.item.id.seq + Seq(len(left_split_item.content)),
+					},
+					origin_left: &Id{
+						client: dest_item.item.id.client,
+						seq:    dest_item.item.id.seq + Seq(max(0, len(left_split_item.content)-1)),
+					},
+					origin_right: dest_item.item.origin_right,
+					deleted:      true,
+					content:      dest_item.item.content[left_item_count:deleted_item_index],
+				}
+				right_split_item := Item{
+					id: Id{
+						client: dest_item.item.id.client,
+						seq:    deleted_item.id.seq + Seq(len(deleted_item.content)),
+					},
+					origin_left: &Id{
+						client: dest_item.item.id.client,
+						seq:    deleted_item.id.seq + Seq(len(deleted_item.content)-1),
+					},
+					origin_right: dest_item.item.origin_right,
+					deleted:      false,
+					content:      dest_item.item.content[deleted_item_index:],
+				}
+				/*fmt.Println(left_split_item.id, left_split_item.origin_left, left_split_item.origin_right, left_split_item.deleted, left_split_item.content)
+				fmt.Println(deleted_item.id, deleted_item.origin_left, deleted_item.origin_right, deleted_item.deleted, deleted_item.content)
+				fmt.Println(right_split_item.id, right_split_item.origin_left, right_split_item.origin_right, right_split_item.deleted, right_split_item.content)
+				fmt.Println("oooooo")*/
+
+				if len(left_split_item.content) == 0 && len(right_split_item.content) == 0 { // if we deleted the whole item
+					dest_item.item = deleted_item
+					// Try to merge with the previous item
+					if dest_item.prev != nil &&
+						dest_item.prev.item.deleted && // both items are deleted
+						dest_item.prev.item.origin_right.equals(dest_item.item.origin_right) && // in case new item is placed at the left of a merged item
+						dest_item.prev.item.id.client == dest_item.item.id.client && // if the item is from the same client
+						dest_item.prev.item.id.seq+Seq(len(dest_item.prev.item.content)) == dest_item.item.id.seq {
+						dest_item.prev.item.content += dest_item.item.content
+						dest_item.prev.next = dest_item.next
+						if dest_item.next != nil {
+							dest_item.next.prev = dest_item.prev
+						} else {
+							dest.content.tail = dest_item.prev
+						}
+						dest.content.length--
+					}
+				} else if len(left_split_item.content) == 0 { // there is no left part
+					dest_item.item = deleted_item
+					right_split := &LinkedItem{
+						item: right_split_item,
+						prev: dest_item,
+						next: dest_item.next,
+					}
+					if dest_item.next != nil {
+						dest_item.next.prev = right_split
+					} else {
+						dest.content.tail = right_split
+					}
+					dest_item.next = right_split
+					dest.content.length++
+
+					// Try to merge with the previous item
+					if dest_item.prev != nil &&
+						dest_item.prev.item.deleted && // both items are deleted
+						dest_item.prev.item.origin_right.equals(dest_item.item.origin_right) && // in case new item is placed at the left of a merged item
+						dest_item.prev.item.id.client == dest_item.item.id.client && // if the item is from the same client
+						dest_item.prev.item.id.seq+Seq(len(dest_item.prev.item.content)) == dest_item.item.id.seq {
+						dest_item.prev.item.content += dest_item.item.content
+						dest_item.prev.next = dest_item.next
+						if dest_item.next != nil {
+							dest_item.next.prev = dest_item.prev
+						} else {
+							dest.content.tail = dest_item.prev
+						}
+						dest.content.length--
+					}
+				} else if len(right_split_item.content) == 0 { // there is no right part
+					dest_item.item = deleted_item
+					left_split := &LinkedItem{
+						item: left_split_item,
+						next: dest_item,
+						prev: dest_item.prev,
+					}
+					if dest_item.prev != nil {
+						dest_item.prev.next = left_split
+					} else {
+						dest.content.head = left_split
+					}
+					dest_item.prev = left_split
+					dest.content.length++
+
+					// Try to merge with the next item
+					if left_split.prev != nil &&
+						left_split.prev.item.deleted && // both items are deleted
+						left_split.prev.item.origin_right.equals(left_split.item.origin_right) && // in case new item is placed at the left of a merged item
+						left_split.prev.item.id.client == left_split.item.id.client && // if the item is from the same client
+						left_split.prev.item.id.seq+Seq(len(left_split.prev.item.content)) == left_split.item.id.seq {
+						left_split.prev.item.content += left_split.item.content
+						left_split.prev.next = left_split.next
+						if left_split.next != nil {
+							left_split.next.prev = left_split.prev
+						} else {
+							dest.content.tail = left_split.prev
+						}
+						dest.content.length--
+					}
+				} else { // there is both left and right parts
+					dest_item.item = deleted_item
+					left_split := &LinkedItem{
+						item: left_split_item,
+						next: dest_item,
+						prev: dest_item.prev,
+					}
+					if dest_item.prev != nil {
+						dest_item.prev.next = left_split
+					} else {
+						dest.content.head = left_split
+					}
+					dest_item.prev = left_split
+					dest.content.length++
+
+					right_split := &LinkedItem{
+						item: right_split_item,
+						prev: dest_item,
+						next: dest_item.next,
+					}
+					if dest_item.next != nil {
+						dest_item.next.prev = right_split
+					} else {
+						dest.content.tail = right_split
+					}
+					dest_item.next = right_split
+					dest.content.length++
+
+					// Try to merge with the next item
+					if left_split.prev != nil &&
+						left_split.prev.item.deleted && // both items are deleted
+						left_split.prev.item.origin_right.equals(left_split.item.origin_right) && // in case new item is placed at the left of a merged item
+						left_split.prev.item.id.client == left_split.item.id.client && // if the item is from the same client
+						left_split.prev.item.id.seq+Seq(len(left_split.prev.item.content)) == left_split.item.id.seq {
+						left_split.prev.item.content += left_split.item.content
+						left_split.prev.next = left_split.next
+						if left_split.next != nil {
+							left_split.next.prev = left_split.prev
+						} else {
+							dest.content.tail = left_split.prev
+						}
+						dest.content.length--
+					}
+				}
+			}
+			//fmt.Println("XXXX")
+		}
+	}
 	return nil
 }
 
@@ -601,26 +797,98 @@ func (doc *Doc) debugPrint() {
 
 func main() {
 	doc1 := newDoc()
+	doc2 := newDoc()
 	/*doc1.localInsertOne(1, 0, "abc")
 	doc1.localDelete(0, 1)
 	doc1.localDelete(1, 1)
-	doc1.localDelete(0, 1)*/
+	doc1.localDelete(0, 1)
+	doc1.debugPrint()*/
 	/*doc1.localInsertOne(1, 0, "abc")
 	doc1.localDelete(2, 1)
-	doc1.localDelete(0, 2)*/
+	doc1.localDelete(0, 2)
+	doc1.debugPrint()*/
 	/*doc1.localInsertOne(1, 0, "def")
 	doc1.localInsertOne(1, 0, "abc")
 	doc1.localDelete(2, 2)
 	doc1.debugPrint()
-	doc1.localInsertOne(1, 3, "ghi")*/
-	doc1.localInsertOne(1, 0, "ab")
-	doc1.debugPrint()
-	doc1.localDelete(1, 1)
+	doc1.localInsertOne(1, 3, "ghi")
+	doc1.debugPrint()*/
+	/*doc1.localInsertOne(1, 0, "a")
+	doc2.mergeFrom(doc1)
+	doc1.localInsertOne(1, 1, "bc")
+	doc2.localInsertOne(2, 0, "XY")
+	doc2.mergeFrom(doc1)
+	doc2.localInsertOne(2, 3, "Z")
+	doc1.mergeFrom(doc2)
+	doc1.debugPrint()*/
 
-	doc1.debugPrint()
-	doc1.localInsertOne(1, 1, "c")
-	doc1.debugPrint()
+	/*doc1.localInsertOne(1, 0, "abc")
 	doc1.localDelete(0, 1)
-	doc1.debugPrint()
+	doc1.localDelete(1, 1)
+	doc1.localDelete(0, 1)
+	doc1.debugPrint()*/
 
+	/*doc1.localInsertOne(1, 0, "abc")
+	doc2.mergeFrom(doc1)
+	doc1.localDelete(0, 1)
+	doc1.localDelete(1, 1)
+	doc2.localDelete(1, 1)
+	doc1.debugPrint()
+	doc2.debugPrint()
+	doc1.mergeFrom(doc2)
+	doc1.debugPrint()*/
+
+	/*doc1.localInsertOne(1, 0, "abc")
+	doc2.mergeFrom(doc1)
+	doc2.localInsertOne(2, 3, "EFG")
+	doc1.localDelete(0, 2)
+	doc2.localDelete(2, 3)
+	doc1.mergeFrom(doc2)
+	doc1.debugPrint()*/
+
+	/*doc1.localInsertOne(1, 0, "abcd")
+	doc2.mergeFrom(doc1)
+	doc1.localInsertOne(1, 2, "I")
+	doc2.localDelete(1, 2)
+	doc2.debugPrint()
+	doc1.mergeFrom(doc2)
+	doc1.debugPrint()
+	*/
+	/*doc1.localInsertOne(1, 0, "abcd")
+	doc2.mergeFrom(doc1)
+	doc1.localDelete(0, 2)
+	doc2.localDelete(2, 2)
+	doc2.debugPrint()
+	doc1.mergeFrom(doc2)
+	doc1.debugPrint()*/
+	/*doc1.localInsertOne(1, 0, "abc")
+	doc2.mergeFrom(doc1)
+	doc2.localInsertOne(2, 1, "I")
+	doc2.localDelete(1, 2)
+	doc2.debugPrint()
+	doc1.mergeFrom(doc2)
+	doc2.mergeFrom(doc1)
+	doc1.debugPrint()
+	doc2.debugPrint()*/
+	/*doc1.localInsertOne(0, 0, "N")
+	doc2.localInsertOne(1, 0, "A")
+	doc2.localInsertOne(1, 0, "2")
+	doc1.localInsertOne(0, 1, "K")
+	doc1.localInsertOne(0, 1, "o")
+	doc1.debugPrint()
+	doc2.debugPrint()
+	doc1.mergeFrom(doc2)
+	doc2.mergeFrom(doc1)
+	doc1.debugPrint()
+	doc2.debugPrint()*/
+	doc2.localInsertOne(1, 0, "k")
+	doc1.localInsertOne(0, 0, "E")
+	doc2.localInsertOne(1, 0, "D")
+	doc1.localInsertOne(0, 1, "W")
+	doc2.localInsertOne(1, 1, "0")
+	doc2.localInsertOne(1, 2, "s")
+	//doc1.mergeFrom(doc2)
+	doc2.mergeFrom(doc1)
+	//doc1.debugPrint()
+	doc2.debugPrint()
 }

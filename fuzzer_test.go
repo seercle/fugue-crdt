@@ -7,7 +7,7 @@ import (
 )
 
 func TestFuzzer(t *testing.T) {
-	const trials int64 = 1
+	const trials int64 = 1000
 	chars := []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
 	chars_len := len(chars)
 	for i := range trials {
@@ -19,13 +19,14 @@ func TestFuzzer(t *testing.T) {
 				doc := docs[i]
 				len := doc.content.length
 				var weight float32 = 0.65
-				if len > 100 {
+				if len > 10 {
 					weight = 0.35
 				}
 				if doc.content.length == 0 || rng.Float32() < weight {
 					//insert
 					position := rng.Intn(len + 1)
 					rune := chars[rng.Intn(chars_len)]
+					//t.Logf("%d %d %s", i, position, string(rune))
 					doc.localInsertOne(Client(i), position, Content(rune))
 				} else {
 					//delete
@@ -35,8 +36,9 @@ func TestFuzzer(t *testing.T) {
 				}
 			}
 		}
+		//t.Log("---")
 		// Pick 2 random documents to merge
-		rand.Shuffle(len(docs), func(i, j int) { docs[i], docs[j] = docs[j], docs[i] })
+		rng.Shuffle(len(docs), func(i, j int) { docs[i], docs[j] = docs[j], docs[i] })
 		doc1 := docs[0]
 		doc2 := docs[1]
 		// Merge doc1 into doc2
@@ -50,7 +52,7 @@ func TestFuzzer(t *testing.T) {
 		}
 		// Check if the merged content is consistent
 		if doc1.getContent() != doc2.getContent() {
-			t.Errorf("Content mismatch after merge: doc1='%s', doc2='%s'", doc1.getContent(), doc2.getContent())
+			t.Errorf("Trial %d after merge: doc1='%s', doc2='%s'", i, doc1.getContent(), doc2.getContent())
 		}
 	}
 }
