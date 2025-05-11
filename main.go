@@ -188,7 +188,7 @@ func (doc *Doc) localDelete(position int, length int) error {
 				}
 				// See if we can merge the item with the next item
 				if item.canMergeRight() {
-					doc.content.mergeLeft(item.next)
+					doc.content.mergeRight(item)
 				}
 			} else {
 				// We need to split the last item to delete a part of it
@@ -461,7 +461,7 @@ func (dest *Doc) mergeFrom(from *Doc) error {
 				}
 				if middle.canMergeRight() {
 					// We can merge the deleted part with the next item
-					dest.content.mergeLeft(middle.next)
+					dest.content.mergeRight(middle)
 				}
 			}
 		}
@@ -484,99 +484,4 @@ func (doc *Doc) debugPrint() {
 }
 
 func main() {
-	/*doc1 := newDoc()
-	//doc2 := newDoc()
-	fmt.Println(doc1.localInsert(1, 0, "abc"))
-	doc1.localDelete(0, 1)
-	doc1.localDelete(1, 1)
-	doc1.localDelete(0, 1)
-	doc1.debugPrint()*/
-	/*doc1.localInsert(1, 0, "abc")
-	doc1.localDelete(2, 1)
-	doc1.localDelete(0, 2)
-	doc1.debugPrint()*/
-	/*doc1.localInsert(1, 0, "def")
-	doc1.localInsert(1, 0, "abc")
-	doc1.localDelete(2, 2)
-	doc1.debugPrint()
-	doc1.localInsert(1, 3, "ghi")
-	doc1.debugPrint()*/
-	/*doc1.localInsert(1, 0, "a")
-	doc2.mergeFrom(doc1)
-	doc1.localInsert(1, 1, "bc")
-	doc2.localInsert(2, 0, "XY")
-	doc2.mergeFrom(doc1)
-	doc2.localInsert(2, 3, "Z")
-	doc1.mergeFrom(doc2)
-	doc1.debugPrint()*/
-
-	/*doc1.localInsert(1, 0, "abc")
-	doc1.localDelete(0, 1)
-	doc1.localDelete(1, 1)
-	doc1.localDelete(0, 1)
-	doc1.debugPrint()*/
-
-	/*doc1.localInsert(1, 0, "abc")
-	doc2.mergeFrom(doc1)
-	doc1.localDelete(0, 1)
-	doc1.localDelete(1, 1)
-	doc2.localDelete(1, 1)
-	doc1.debugPrint()
-	doc2.debugPrint()
-	doc1.mergeFrom(doc2)
-	doc1.debugPrint()*/
-
-	/*doc1.localInsert(1, 0, "abc")
-	doc2.mergeFrom(doc1)
-	doc2.localInsert(2, 3, "EFG")
-	doc1.localDelete(0, 2)
-	doc2.localDelete(2, 3)
-	doc1.mergeFrom(doc2)
-	doc1.debugPrint()*/
-
-	/*doc1.localInsert(1, 0, "abcd")
-	doc2.mergeFrom(doc1)
-	doc1.localInsert(1, 2, "I")
-	doc2.localDelete(1, 2)
-	doc2.debugPrint()
-	doc1.mergeFrom(doc2)
-	doc1.debugPrint()
-	*/
-	/*doc1.localInsert(1, 0, "abcd")
-	doc2.mergeFrom(doc1)
-	doc1.localDelete(0, 2)
-	doc2.localDelete(2, 2)
-	doc2.debugPrint()
-	doc1.mergeFrom(doc2)
-	doc1.debugPrint()*/
-	/*doc1.localInsert(1, 0, "abc")
-	doc2.mergeFrom(doc1)
-	doc2.localInsert(2, 1, "I")
-	doc2.localDelete(1, 2)
-	doc2.debugPrint()
-	doc1.mergeFrom(doc2)
-	doc2.mergeFrom(doc1)
-	doc1.debugPrint()
-	doc2.debugPrint()*/
-	/*doc1.localInsert(0, 0, "N")
-	doc2.localInsert(1, 0, "A")
-	doc2.localInsert(1, 0, "2")
-	doc1.localInsert(0, 1, "K")
-	doc1.localInsert(0, 1, "o")
-	doc1.debugPrint()
-	doc2.debugPrint()
-	doc1.mergeFrom(doc2)
-	doc2.mergeFrom(doc1)
-	doc1.debugPrint()
-	doc2.debugPrint()*/
-	/*doc2.localInsert(1, 0, "k")
-	doc1.localInsert(0, 0, "E")
-	doc2.localInsert(1, 0, "D")
-	doc1.localInsert(0, 1, "W")
-	doc2.localInsert(1, 1, "0")
-	doc2.localInsert(1, 2, "s")
-	//doc1.mergeFrom(doc2)
-	doc2.mergeFrom(doc1)
-	//doc1.debugPrint()
-	doc2.debugPrint()*/
 }

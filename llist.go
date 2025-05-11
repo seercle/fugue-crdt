@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"unicode/utf8"
 )
 
 type Client uint8
@@ -33,6 +34,14 @@ type LinkedList struct {
 	count  int // number of items in the list, different than length
 	head   *LinkedItem
 	tail   *LinkedItem
+}
+
+// THIS IS VERY SLOW, SHOULD NOT BE USED
+// WE WILL STORE THE LENGTH OF THE CONTENT IN THE ITEM LATER
+func (content *Content) length() int {
+	// The content is encoded in UTF-8, so we need to count the number of runes
+	// instead of the number of bytes
+	return utf8.RuneCountInString(string(*content))
 }
 
 // delete removes the item from the list and updates both length and count
@@ -74,6 +83,17 @@ func (list *LinkedList) mergeLeft(at *LinkedItem) error {
 		return fmt.Errorf("error deleting item: %w", err)
 	}
 	return nil
+}
+
+// mergeRight merges the content of the item at 'at' with the content of the item to its right
+// and deletes the item at 'at'.
+//
+// Warning: make sure to verify that the merging is valid before calling this function
+func (list *LinkedList) mergeRight(at *LinkedItem) error {
+	if at == nil {
+		return errors.New("item is nil")
+	}
+	return list.mergeLeft(at.next)
 }
 
 // splitTwo splits the item at 'at' into two items at the given position.
