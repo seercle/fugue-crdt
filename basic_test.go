@@ -7,32 +7,32 @@ import (
 func TestBasicInsertions(t *testing.T) {
 	doc := newDoc()
 
-	doc.localInsertOne(1, 0, "a")
+	doc.localInsert(1, 0, "a")
 	if doc.getContent() != "a" {
 		t.Errorf("Expected content 'a', got '%s'", doc.getContent())
 	}
 
-	doc.localInsertOne(1, 1, "b")
+	doc.localInsert(1, 1, "b")
 	if doc.getContent() != "ab" {
 		t.Errorf("Expected content 'ab', got '%s'", doc.getContent())
 	}
 
-	doc.localInsertOne(1, 0, "c")
+	doc.localInsert(1, 0, "c")
 	if doc.getContent() != "cab" {
 		t.Errorf("Expected content 'cab', got '%s'", doc.getContent())
 	}
 
-	doc.localInsertOne(1, 0, "d")
+	doc.localInsert(1, 0, "d")
 	if doc.getContent() != "dcab" {
 		t.Errorf("Expected content 'dcab', got '%s'", doc.getContent())
 	}
 
-	doc.localInsertOne(1, 1, "e")
+	doc.localInsert(1, 1, "e")
 	if doc.getContent() != "decab" {
 		t.Errorf("Expected content 'decab', got '%s'", doc.getContent())
 	}
 
-	doc.localInsertOne(1, 2, "f")
+	doc.localInsert(1, 2, "f")
 	if doc.getContent() != "defcab" {
 		t.Errorf("Expected content 'defcab', got '%s'", doc.getContent())
 	}
@@ -41,10 +41,10 @@ func TestBasicInsertions(t *testing.T) {
 func TestBasicDeletions(t *testing.T) {
 	doc := newDoc()
 
-	doc.localInsertOne(1, 0, "a")
-	doc.localInsertOne(1, 1, "b")
-	doc.localInsertOne(1, 2, "c")
-	doc.localInsertOne(1, 3, "d")
+	doc.localInsert(1, 0, "a")
+	doc.localInsert(1, 1, "b")
+	doc.localInsert(1, 2, "c")
+	doc.localInsert(1, 3, "d")
 
 	doc.localDelete(1, 2)
 	if doc.getContent() != "ad" {
@@ -66,11 +66,11 @@ func TestMergeBasic(t *testing.T) {
 	doc1 := newDoc()
 	doc2 := newDoc()
 
-	doc1.localInsertOne(1, 0, "a")
-	doc1.localInsertOne(1, 1, "b")
+	doc1.localInsert(1, 0, "a")
+	doc1.localInsert(1, 1, "b")
 
-	doc2.localInsertOne(2, 0, "x")
-	doc2.localInsertOne(2, 1, "y")
+	doc2.localInsert(2, 0, "x")
+	doc2.localInsert(2, 1, "y")
 
 	err := doc1.mergeFrom(doc2)
 	if err != nil {
@@ -87,11 +87,11 @@ func TestMergeWithConflicts(t *testing.T) {
 	doc1 := newDoc()
 	doc2 := newDoc()
 
-	doc1.localInsertOne(1, 0, "a")
-	doc1.localInsertOne(1, 1, "b")
+	doc1.localInsert(1, 0, "a")
+	doc1.localInsert(1, 1, "b")
 
-	doc2.localInsertOne(2, 0, "b")
-	doc2.localInsertOne(2, 1, "a")
+	doc2.localInsert(2, 0, "b")
+	doc2.localInsert(2, 1, "a")
 
 	err := doc1.mergeFrom(doc2)
 	if err != nil {
@@ -109,12 +109,12 @@ func TestMergeWithDeletions(t *testing.T) {
 	doc1 := newDoc()
 	doc2 := newDoc()
 
-	doc1.localInsertOne(1, 0, "a")
-	doc1.localInsertOne(1, 1, "b")
-	doc1.localInsertOne(1, 2, "c")
+	doc1.localInsert(1, 0, "a")
+	doc1.localInsert(1, 1, "b")
+	doc1.localInsert(1, 2, "c")
 
-	doc2.localInsertOne(2, 0, "x")
-	doc2.localInsertOne(2, 1, "y")
+	doc2.localInsert(2, 0, "x")
+	doc2.localInsert(2, 1, "y")
 	doc2.localDelete(0, 1) // Delete "x"
 
 	err := doc1.mergeFrom(doc2)
@@ -132,8 +132,8 @@ func TestConcurrentEdits(t *testing.T) {
 	doc1 := newDoc()
 	doc2 := newDoc()
 
-	doc1.localInsertOne(1, 0, "a")
-	doc2.localInsertOne(2, 0, "b")
+	doc1.localInsert(1, 0, "a")
+	doc2.localInsert(2, 0, "b")
 
 	err := doc1.mergeFrom(doc2)
 	if err != nil {
@@ -159,12 +159,12 @@ func TestConcurrentEdits(t *testing.T) {
 
 func TestEdgeCases(t *testing.T) {
 	doc := newDoc()
-	err := doc.localInsertOne(1, -1, "x")
+	err := doc.localInsert(1, -1, "x")
 	if err == nil {
 		t.Errorf("Expected error for negative position, got nil")
 	}
 
-	err = doc.localInsertOne(1, 10, "x")
+	err = doc.localInsert(1, 10, "x")
 	if err == nil {
 		t.Errorf("Expected error for invalid position, got nil")
 	}
@@ -188,12 +188,12 @@ func TestMergeWithOverlappingDeletions(t *testing.T) {
 	doc1 := newDoc()
 	doc2 := newDoc()
 
-	doc1.localInsertOne(1, 0, "a")
-	doc1.localInsertOne(1, 1, "b")
-	doc1.localInsertOne(1, 2, "c")
+	doc1.localInsert(1, 0, "a")
+	doc1.localInsert(1, 1, "b")
+	doc1.localInsert(1, 2, "c")
 
-	doc2.localInsertOne(2, 0, "x")
-	doc2.localInsertOne(2, 1, "y")
+	doc2.localInsert(2, 0, "x")
+	doc2.localInsert(2, 1, "y")
 	doc2.localDelete(0, 2) // Delete "xy"
 
 	err := doc1.mergeFrom(doc2)
@@ -212,9 +212,9 @@ func TestMergeWithMultipleClients(t *testing.T) {
 	doc2 := newDoc()
 	doc3 := newDoc()
 
-	doc1.localInsertOne(1, 0, "a")
-	doc2.localInsertOne(2, 0, "b")
-	doc3.localInsertOne(3, 0, "c")
+	doc1.localInsert(1, 0, "a")
+	doc2.localInsert(2, 0, "b")
+	doc3.localInsert(3, 0, "c")
 
 	err := doc1.mergeFrom(doc2)
 	if err != nil {

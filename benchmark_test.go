@@ -19,7 +19,7 @@ func BenchmarkLocalInsert(b *testing.B) {
 	// Run the benchmark
 	for i := 0; i < b.N; i++ {
 		// Insert a single character at position i
-		err := doc.localInsertOne(client, i, Content("A"))
+		err := doc.localInsert(client, i, Content("A"))
 		if err != nil {
 			b.Fatalf("failed to insert: %v", err)
 		}
@@ -39,7 +39,7 @@ func BenchmarkLocalDelete(b *testing.B) {
 
 	// Prepopulate the document with some content
 	for i := 0; i < b.N; i++ {
-		err := doc.localInsertOne(client, i, Content("A"))
+		err := doc.localInsert(client, i, Content("A"))
 		if err != nil {
 			b.Fatalf("failed to insert: %v", err)
 		}
@@ -76,11 +76,11 @@ func BenchmarkMerge(b *testing.B) {
 
 	// Prepopulate both documents with some content
 	for i := 0; i < 1000; i++ {
-		err := doc1.localInsertOne(client1, i, Content("A"))
+		err := doc1.localInsert(client1, i, Content("A"))
 		if err != nil {
 			b.Fatalf("failed to insert into doc1: %v", err)
 		}
-		err = doc2.localInsertOne(client2, i, Content("B"))
+		err = doc2.localInsert(client2, i, Content("B"))
 		if err != nil {
 			b.Fatalf("failed to insert into doc2: %v", err)
 		}

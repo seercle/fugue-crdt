@@ -13,7 +13,7 @@ func TestFuzzer(t *testing.T) {
 	for i := range trials {
 		rng := rand.New(rand.NewSource(i))
 		docs := []*Doc{newDoc(), newDoc(), newDoc()}
-		for range 100 {
+		for range 1000 {
 			for range len(docs) {
 				i := rng.Intn(len(docs))
 				doc := docs[i]
@@ -27,7 +27,7 @@ func TestFuzzer(t *testing.T) {
 					position := rng.Intn(len + 1)
 					rune := chars[rng.Intn(chars_len)]
 					//t.Logf("%d %d %s", i, position, string(rune))
-					doc.localInsertOne(Client(i), position, Content(rune))
+					doc.localInsert(Client(i), position, Content(rune))
 				} else {
 					//delete
 					position := rng.Intn(len + 1)
@@ -53,6 +53,13 @@ func TestFuzzer(t *testing.T) {
 		// Check if the merged content is consistent
 		if doc1.getContent() != doc2.getContent() {
 			t.Errorf("Trial %d after merge: doc1='%s', doc2='%s'", i, doc1.getContent(), doc2.getContent())
+		}
+		for j := range len(docs) {
+			for item := docs[j].content.head; item != nil; item = item.next {
+				if item.item.content == "" {
+					t.Errorf("Trial %d: empty content in doc %d", i, j)
+				}
+			}
 		}
 	}
 }
