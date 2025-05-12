@@ -2,5 +2,5 @@ cpu.prof
 v0.test
 venv
 .ropeproject
-benchmark_results
+benchmark_results.csv
 out.csv
