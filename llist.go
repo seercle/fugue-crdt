@@ -75,7 +75,14 @@ func (list *LinkedList) mergeLeft(at *LinkedItem) error {
 	if at.prev == nil {
 		return errors.New("no left item to merge with")
 	}
+
 	at.prev.item.content += at.item.content
+	/* Below should be better but no performance gain was observed
+	    sb.WriteString(string(at.prev.item.content))
+	   	sb.WriteString(string(at.item.content))
+	   	at.prev.item.content = Content(sb.String())
+	   	sb.Reset()
+	*/
 
 	// Update the count of the list, this change will be counterbalanced by the deletion
 	list.count += len(at.item.content)
