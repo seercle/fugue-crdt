@@ -4,7 +4,7 @@ import csv
 # Read the benchmark results
 x = []  # Total changes
 y = []  # Average time
-with open("out.csv", "r") as f:
+with open("temp/benchmark_trace.csv", "r") as f:
     reader = csv.reader(f)
     next(reader)  # Skip the header
     for row in reader:

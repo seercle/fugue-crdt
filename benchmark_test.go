@@ -17,7 +17,7 @@ type Operation struct {
 }
 
 func ParseTrace() ([]Operation, error) {
-	file, err := os.Open("editing-trace.js")
+	file, err := os.Open("benchmark/editing-trace.js")
 	if err != nil {
 		return nil, err
 	}
@@ -75,9 +75,19 @@ func BenchmarkTrace(b *testing.B) {
 	if err != nil {
 		b.Fatalf("Failed to parse trace: %v", err)
 	}
+	if _, err := os.Stat("temp"); os.IsNotExist(err) {
+		err = os.Mkdir("temp", 0755)
+		if err != nil {
+			b.Fatalf("Failed to create temp directory: %v", err)
+		}
+	}
+	file, err := os.Create("temp/benchmark_trace.csv")
+	if err != nil {
+		b.Fatalf("Failed to create benchmark file: %v", err)
+	}
+	defer file.Close()
 	doc := newDoc()
-	var totalTime time.Duration
-	var averageTimes []float64
+	var time_sum time.Duration
 	for i, op := range operations {
 		start := time.Now()
 		if op.Type {
@@ -90,18 +100,11 @@ func BenchmarkTrace(b *testing.B) {
 		}
 
 		elapsed := time.Since(start)
-		totalTime += elapsed
+		time_sum += elapsed
 
 		if i%2500 == 0 {
-			fmt.Printf("%d,%.2f\n", i, float64(totalTime.Milliseconds())/2500)
-			totalTime = 0
+			file.WriteString(fmt.Sprintf("%d,%.2f\n", i, float64(time_sum.Milliseconds())/2500))
+			time_sum = 0
 		}
-		//averageTime := float64(totalTime.Microseconds()) / float64(i+1)
-		//averageTimes = append(averageTimes, averageTime)
-	}
-	// Output the results for plotting
-	fmt.Println("Total Changes,Average Time (microseconds)")
-	for i, avgTime := range averageTimes {
-		fmt.Printf("%d,%.2f\n", i+1, avgTime)
 	}
 }
