@@ -4,4 +4,3 @@ venv
 .ropeproject
 benchmark_results
 out.csv
-editing-trace.js
