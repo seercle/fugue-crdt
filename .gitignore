@@ -1,2 +1,7 @@
 cpu.prof
 v0.test
+venv
+.ropeproject
+benchmark_results
+out.csv
+editing-trace.js

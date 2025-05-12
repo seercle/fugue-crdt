@@ -43,16 +43,16 @@ func (doc *Doc) findItemFromId(id *Id) (*LinkedItem, int, error) {
 	for linked_item := doc.content.head; linked_item != nil; linked_item = linked_item.next {
 		if linked_item.item.id.client != id.client {
 			// We can skip the item if the client is different
-			i += len(linked_item.item.content)
+			i += linked_item.item.length
 			continue
 		}
 		if linked_item.item.id.seq <= id.seq &&
-			id.seq <= linked_item.item.id.seq+Seq(len(linked_item.item.content)-1) {
+			id.seq <= linked_item.item.id.seq+Seq(linked_item.item.length-1) {
 			// The item's id is in the range of the linked_item
 			return linked_item, i + int(id.seq-linked_item.item.id.seq), nil
 		}
 		// Skip to the next item
-		i += len(linked_item.item.content)
+		i += linked_item.item.length
 	}
 	return nil, -1, ErrNotFound
 }
@@ -74,11 +74,11 @@ func (doc *Doc) findItemAt(position int, stick_end bool) (*LinkedItem, int, *Out
 		} else if item.item.deleted {
 			// We skip deleted items without counting them
 			continue
-		} else if len(item.item.content) > position {
+		} else if item.item.length > position {
 			// The item is contained in the linked_item
 			return item, position, nil
 		}
-		position -= len(item.item.content) // skip to the next item
+		position -= item.item.length // skip to the next item
 	}
 	return nil, -1, &OutOfBoundErr{position}
 }
@@ -110,7 +110,7 @@ func (doc *Doc) localInsert(client Client, position int, content Content) error 
 				client: doc.content.tail.item.id.client,
 				seq:    doc.content.tail.item.id.seq,
 			}
-			origin_left.seq += Seq(len(doc.content.tail.item.content) - 1)
+			origin_left.seq += Seq(doc.content.tail.item.length - 1)
 		}
 		// We don't need to set the origin_right if we are at the end of the document
 	} else {
@@ -126,7 +126,7 @@ func (doc *Doc) localInsert(client Client, position int, content Content) error 
 				prev_id := item.prev.item.id
 				origin_left = &Id{
 					client: prev_id.client,
-					seq:    prev_id.seq + Seq(len(item.prev.item.content)-1), // the right most item of the previous item
+					seq:    prev_id.seq + Seq(item.prev.item.length-1), // the right most item of the previous item
 				}
 			}
 			// We don't need to set the origin_left if we are at the beginning of the document
@@ -147,6 +147,7 @@ func (doc *Doc) localInsert(client Client, position int, content Content) error 
 		origin_right: origin_right,
 		deleted:      false,
 		content:      content,
+		length:       content.length(),
 	})
 }
 
@@ -176,10 +177,10 @@ func (doc *Doc) localDelete(position int, length int) error {
 	for length > 0 && item != nil {
 		if !item.item.deleted {
 			// We only care about the non-deleted items
-			if length >= len(item.item.content) {
+			if length >= item.item.length {
 				// We can delete the whole item
 				item.item.deleted = true
-				length -= len(item.item.content)
+				length -= item.item.length
 				// See if we can merge the item with the previous item
 				if item.canMergeLeft() {
 					doc.content.mergeLeft(item)
@@ -220,7 +221,8 @@ func (doc *Doc) localDelete(position int, length int) error {
 // returns the cropped item and an error if the item is fully in the version
 func cropOutVersion(item Item, version *Version) (Item, error) {
 	if seq, ok := (*version)[item.id.client]; ok {
-		if seq >= item.id.seq+Seq(len(item.content)-1) { // item is fully in the version
+		if seq >= item.id.seq+Seq(item.length-1) {
+			// The item is fully in the version
 			return Item{}, errors.New("item is fully in the version")
 		}
 		if seq < item.id.seq {
@@ -283,7 +285,7 @@ func (doc *Doc) integrate(item Item) error {
 		return errors.New("invalid Seq number")
 	}
 	// The version also increase with the length of the item
-	doc.version[id.client] = id.seq + Seq(len(item.content)-1)
+	doc.version[id.client] = id.seq + Seq(item.length-1)
 	left_item, left_index, err := doc.findItemFromId(item.origin_left)
 	if err != nil {
 		return fmt.Errorf("origin_left not found: %w", err)
@@ -295,7 +297,7 @@ func (doc *Doc) integrate(item Item) error {
 		dest_item = left_item
 		// We will place the item after the left item
 		position++
-		if position > len(left_item.item.content)-1 {
+		if position > left_item.item.length-1 {
 			// Go to the next item if we were already at the end of the left item
 			dest_item = dest_item.next
 			position = 0
@@ -306,6 +308,7 @@ func (doc *Doc) integrate(item Item) error {
 	if item.origin_right != nil {
 		right_item, right_index, err = doc.findItemFromId(item.origin_right)
 		if err != nil {
+			fmt.Println(item, item.origin_right)
 			return fmt.Errorf("origin_right not found: %w", err)
 		}
 	}
@@ -326,6 +329,7 @@ func (doc *Doc) integrate(item Item) error {
 		if other.item.origin_right != nil {
 			_, oright_index, err = doc.findItemFromId(other.item.origin_right)
 			if err != nil {
+				fmt.Println(other.item.origin_right)
 				return fmt.Errorf("origin_right not found: %w", err)
 			}
 		}
@@ -373,7 +377,7 @@ func (at *LinkedItem) canMergeLeft() bool {
 	return at != nil && at.prev != nil && at.prev.item.deleted == at.item.deleted && // both items are deleted or not
 		at.prev.item.origin_right.equals(at.item.origin_right) && // in case new item is placed at the left of a merged item
 		at.prev.item.id.client == at.item.id.client && // if the item is from the same client
-		at.prev.item.id.seq+Seq(len(at.prev.item.content)) == at.item.id.seq
+		at.prev.item.id.seq+Seq(at.prev.item.length) == at.item.id.seq
 }
 
 // canMergeRight checks if the item can be merged with the next item
@@ -391,7 +395,7 @@ func (at *LinkedItem) canMergeRight() bool {
 // example: 'abc' contains 'a','ab','cd'
 func (source Item) contains(item Item) bool {
 	return source.id.client == item.id.client &&
-		max(source.id.seq, item.id.seq) <= min(source.id.seq+Seq(len(source.content)-1), item.id.seq+Seq(len(item.content)-1))
+		max(source.id.seq, item.id.seq) <= min(source.id.seq+Seq(source.length-1), item.id.seq+Seq(item.length-1))
 }
 
 // mergeFrom merges the content from the other document into this document
@@ -447,7 +451,7 @@ func (dest *Doc) mergeFrom(from *Doc) error {
 					}
 					continue
 				}
-				deleted_item_count := len(dest_item.item.content) - left_split_count + min(int(from_item.item.id.seq)+len(from_item.item.content)-int(dest_item.item.id.seq)-len(dest_item.item.content), 0)
+				deleted_item_count := dest_item.item.length - left_split_count + min(int(from_item.item.id.seq)+from_item.item.length-int(dest_item.item.id.seq)-dest_item.item.length, 0)
 				middle, _, err2 := dest.content.splitTwo(middle_right, deleted_item_count)
 				if err2 != nil {
 					return fmt.Errorf("error splitting item: %w", err2)

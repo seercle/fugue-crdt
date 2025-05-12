@@ -3,11 +3,12 @@ package main
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"unicode/utf8"
 )
 
 type Client uint8
-type Seq uint32
+type Seq int
 type Content string
 
 type Id struct {
@@ -20,7 +21,8 @@ type Item struct {
 	origin_left  *Id
 	origin_right *Id
 	deleted      bool
-	content      Content // Now multiple characters
+	content      Content // Supports UTF-8 encoded content of any length
+	length       int     // length of the content
 }
 
 type LinkedItem struct {
@@ -31,13 +33,16 @@ type LinkedItem struct {
 
 type LinkedList struct {
 	length int // length of the list, not used
-	count  int // number of items in the list, different than length
+	count  int // sum of the lengths of all items in the list
 	head   *LinkedItem
 	tail   *LinkedItem
 }
 
-// THIS IS VERY SLOW, SHOULD NOT BE USED
-// WE WILL STORE THE LENGTH OF THE CONTENT IN THE ITEM LATER
+var (
+	sb = &strings.Builder{}
+)
+
+// length returns the length of the content
 func (content *Content) length() int {
 	// The content is encoded in UTF-8, so we need to count the number of runes
 	// instead of the number of bytes
@@ -60,7 +65,7 @@ func (list *LinkedList) delete(item *LinkedItem) error {
 		list.tail = item.prev
 	}
 	list.length--
-	list.count -= len(item.item.content)
+	list.count -= item.item.length
 	return nil
 }
 
@@ -76,16 +81,16 @@ func (list *LinkedList) mergeLeft(at *LinkedItem) error {
 		return errors.New("no left item to merge with")
 	}
 
-	at.prev.item.content += at.item.content
-	/* Below should be better but no performance gain was observed
-	    sb.WriteString(string(at.prev.item.content))
-	   	sb.WriteString(string(at.item.content))
-	   	at.prev.item.content = Content(sb.String())
-	   	sb.Reset()
-	*/
+	at.prev.item.length += at.item.length
+	//at.prev.item.content += at.item.content
+	//Below should be better but no performance gain was observed
+	sb.WriteString(string(at.prev.item.content))
+	sb.WriteString(string(at.item.content))
+	at.prev.item.content = Content(sb.String())
+	sb.Reset()
 
 	// Update the count of the list, this change will be counterbalanced by the deletion
-	list.count += len(at.item.content)
+	list.count += at.item.length
 	if err := list.delete(at); err != nil {
 		return fmt.Errorf("error deleting item: %w", err)
 	}
@@ -118,26 +123,37 @@ func (list *LinkedList) splitTwo(at *LinkedItem, position int) (left *LinkedItem
 	if position == 0 {
 		return nil, at, nil
 	}
-	if position < 0 || position > len(at.item.content) {
+	if position < 0 || position > at.item.length {
 		return nil, nil, errors.New("position out of bound")
 	}
-	if position == len(at.item.content) {
+	if position == at.item.length {
 		return at, nil, nil
 	}
+
+	// Find the byte index corresponding to the rune position
+	content := string(at.item.content)
+	byte_index := 0
+	for range position {
+		_, size := utf8.DecodeRuneInString(content[byte_index:])
+		byte_index += size
+	}
+
 	// Create the left part of the split
 	left_item := at.item
-	left_item.content = at.item.content[:position]
+	left_item.content = Content(content[:byte_index])
+	left_item.length = position
 
 	// Modify the original item to be the right part of the split
 	at.item.id.seq = at.item.id.seq + Seq(position)
-	at.item.content = at.item.content[position:]
+	at.item.content = Content(content[byte_index:])
+	at.item.length = at.item.length - position
 	at.item.origin_left = &Id{
 		client: left_item.id.client,
 		seq:    at.item.id.seq - 1,
 	}
 
 	// Update the count of the list, this change will be counterbalanced by the insertion
-	list.count -= len(left_item.content)
+	list.count -= left_item.length
 	list.insertBefore(at, left_item)
 	return at.prev, at, nil
 }
@@ -159,7 +175,7 @@ func (list *LinkedList) insertAt(at *LinkedItem, position int, item Item) (left 
 // If 'at' is nil, the item is inserted at the beginning of the list.
 func (list *LinkedList) insertAfter(at *LinkedItem, item Item) {
 	list.length++
-	list.count += len(item.content)
+	list.count += item.length
 	linked_item := &LinkedItem{item: item}
 	if at == nil { // insert at the beginning
 		if list.head == nil { // insert in an empty list
@@ -188,7 +204,7 @@ func (list *LinkedList) insertAfter(at *LinkedItem, item Item) {
 // If 'at' is nil, the item is inserted at the end of the list.
 func (list *LinkedList) insertBefore(at *LinkedItem, item Item) {
 	list.length++
-	list.count += len(item.content)
+	list.count += item.length
 	linked_item := &LinkedItem{item: item}
 	if at == nil { // insert at the end
 		if list.tail == nil { // insert in an empty list

@@ -8,7 +8,7 @@ import (
 
 func TestFuzzer(t *testing.T) {
 	const trials int64 = 1000
-	chars := []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+	chars := []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ零一二三四五六七八九十")
 	chars_len := len(chars)
 	for i := range trials {
 		rng := rand.New(rand.NewSource(i))
