@@ -51,13 +51,23 @@ func ParseTrace() ([]Operation, error) {
 
 			// Parse the character (if present)
 			char := ""
-			if len(parts) == 4 { // If we split a "," character by mistake
-				parts[2] = parts[2] + "," + parts[3]
+			if len(parts) > 2 {
+				if len(parts) == 4 { // If we split a "," character by mistake
+					parts[2] = parts[2] + "," + parts[3]
+				}
+				if !editType && len(parts) > 2 {
+					rawChar := strings.TrimSpace(parts[2])
+					if strings.HasPrefix(rawChar, "\"") && strings.HasSuffix(rawChar, "\"") {
+						rawChar = rawChar[1 : len(rawChar)-1] // Remove surrounding quotes
+					}
+					// Use strconv.Unquote to interpret escape sequences
+					unquotedChar, err := strconv.Unquote(`"` + rawChar + `"`)
+					if err != nil {
+						return nil, fmt.Errorf("failed to unquote character: %w", err)
+					}
+					char = unquotedChar
+				}
 			}
-			if !editType && len(parts) > 2 {
-				char = strings.Trim(strings.TrimSpace(parts[2]), "\"")
-			}
-
 			operations = append(operations, Operation{
 				Position: position,
 				Type:     editType,
@@ -107,4 +117,5 @@ func BenchmarkTrace(b *testing.B) {
 			time_sum = 0
 		}
 	}
+	fmt.Println(doc.getContent())
 }
