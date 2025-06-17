@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 )
@@ -13,6 +14,94 @@ type Doc struct {
 	content LinkedList
 	version Version
 	cache   map[Client][]*LinkedItem
+}
+
+// findInCache finds the item in the cache for the given client
+//
+// returns the index of the item in the cache
+// returns an error if the item is not found
+func (doc *Doc) findInCache(id Id) (int, error) {
+	cache := doc.cache[id.client]
+	if cache == nil {
+		return -1, fmt.Errorf("cache not found for client %d", id.client)
+	}
+	len := len(cache)
+	if len == 0 {
+		return -1, fmt.Errorf("cache is empty for client %d", id.client)
+	}
+	left := 0
+	right := len - 1
+	mid := cache[right]
+	mid_seq := mid.item.id.seq
+	if mid_seq == id.seq {
+		return right, nil
+	}
+	fmt.Println(id.client, id.seq, mid_seq, mid.item.length, right)
+	mid_index := int(math.Floor((float64(id.seq) / (float64(int(mid_seq) + mid.item.length - 1))) * float64(right)))
+	for left <= right {
+		mid = cache[mid_index]
+		mid_seq = mid.item.id.seq
+		if mid_seq <= id.seq {
+			if id.seq < mid_seq+Seq(mid.item.length) {
+				return mid_index, nil
+			}
+			left = mid_index + 1
+		} else {
+			right = mid_index - 1
+		}
+		mid_index = int(math.Floor(float64(left+right)) / 2)
+	}
+	return -1, fmt.Errorf("item not found in cache for client %d", id.client)
+}
+
+func (doc *Doc) findCleanInCache(id Id) (int, error) {
+	index, err := doc.findInCache(id)
+	if err != nil {
+		return -1, err
+	}
+	item := doc.cache[id.client][index]
+	if item.item.id.seq < id.seq {
+		doc.cache[id.client] = append(doc.cache[id.client], item)
+	}
+
+	//structs.splice(index + 1, 0, splitItem(transaction, struct, clock - struct.id.clock))
+	return index + 1, nil
+
+}
+
+// addToCache adds the item to the cache for the given client
+//
+// returns an error if the item does not follow the previous item
+func (doc *Doc) addToCache(item *LinkedItem) error {
+	if doc.cache[item.item.id.client] == nil {
+		doc.cache[item.item.id.client] = make([]*LinkedItem, 0)
+	} else {
+		// Check if the item is already in the cache
+		len := len(doc.cache[item.item.id.client])
+		last := doc.cache[item.item.id.client][len-1]
+		if last.item.id.seq+Seq(last.item.length) != item.item.id.seq {
+			return fmt.Errorf("items are not in order in cache %d", item.item.id.client)
+		}
+	}
+	doc.cache[item.item.id.client] = append(doc.cache[item.item.id.client], item)
+	return nil
+}
+
+// getFromCache gets the item from the cache for the given client
+//
+// returns the item and an error if the item is not found
+func (doc *Doc) getFromCache(id Id) (*LinkedItem, error) {
+	index, err := doc.findInCache(id)
+	if err != nil {
+		return nil, err
+	}
+	if index < 0 {
+		return nil, fmt.Errorf("returned index is negative for client %d", id.client)
+	}
+	if index >= len(doc.cache[id.client]) {
+		return nil, fmt.Errorf("returned index is greater than cache length for client %d", id.client)
+	}
+	return doc.cache[id.client][index], nil
 }
 
 func newDoc() *Doc {
@@ -38,31 +127,22 @@ func (doc *Doc) getContent() Content {
 //
 // returns the item and the position of the id in the item
 // returns an error if the item is not found
-// returns -1 if the item is nil
+// returns 0 if the item is nil
 func (doc *Doc) findItemFromId(id *Id) (*LinkedItem, int, error) {
 	if id == nil {
-		return nil, -1, nil
+		return nil, 0, nil
 	}
-	/*if doc.last_item != nil && id.equals(&doc.last_item.item.id) {
-	// We can skip the search if we already have the item
-	return doc.last_item, doc.last_position, nil
-	}*/
-	i := 0
 	for linked_item := doc.content.head; linked_item != nil; linked_item = linked_item.next {
 		if linked_item.item.id.client != id.client {
-			// We can skip the item if the client is different
-			i += linked_item.item.length
 			continue
 		}
 		if linked_item.item.id.seq <= id.seq &&
 			id.seq <= linked_item.item.id.seq+Seq(linked_item.item.length-1) {
 			// The item's id is in the range of the linked_item
-			return linked_item, i + int(id.seq-linked_item.item.id.seq), nil
+			return linked_item, int(id.seq - linked_item.item.id.seq), nil
 		}
-		// Skip to the next item
-		i += linked_item.item.length
 	}
-	return nil, -1, ErrNotFound
+	return nil, 0, ErrNotFound
 }
 
 // findItemAt finds the item at the given document position, ignoring deleted items
@@ -194,7 +274,7 @@ func (doc *Doc) localDelete(position int, length int) error {
 	// The left part of the item will be kept
 	// The right part of the item will be deleted
 	if !item.item.deleted && item_position > 0 {
-		_, right_split, err := doc.content.splitTwo(item, item_position)
+		_, right_split, err := doc.splitTwo(item, item_position)
 		if err != nil {
 			return fmt.Errorf("delete error: %w", err)
 		}
@@ -207,29 +287,30 @@ func (doc *Doc) localDelete(position int, length int) error {
 			if length >= item.item.length {
 				// We can delete the whole item
 				item.item.deleted = true
-				//doc.content.count -= item.item.length
 				length -= item.item.length
+				doc.content.count -= item.item.length
 				// See if we can merge the item with the previous item
 				if item.canMergeLeft() {
-					doc.content.mergeLeft(item)
+					doc.mergeLeft(item)
 					// Move to the previous item, so that we can do merging in both directions
 					item = item.prev
 				}
 				// See if we can merge the item with the next item
 				if item.canMergeRight() {
-					doc.content.mergeRight(item)
+					doc.mergeRight(item)
 				}
 			} else {
 				// We need to split the last item to delete a part of it
-				left, _, err := doc.content.splitTwo(item, length)
+				left, _, err := doc.splitTwo(item, length)
 				if err != nil {
 					return fmt.Errorf("delete error: %w", err)
 				}
 				left.item.deleted = true
+				doc.content.count -= left.item.length
 				//doc.content.count -= left.item.length
 				//See if we can merge the left part of the split with the previous item
 				if left.canMergeLeft() {
-					doc.content.mergeLeft(left)
+					doc.mergeLeft(left)
 				}
 				return nil
 			}
@@ -241,7 +322,6 @@ func (doc *Doc) localDelete(position int, length int) error {
 	if length > 0 {
 		return errors.New("not enough items to delete")
 	}
-
 	return nil
 }
 
@@ -304,6 +384,50 @@ func (doc *Doc) remoteInsert(item Item) {
 	doc.integrate(item)
 }
 
+// compare compares two integers and returns the order between them
+//
+// returns 0 if they are equal
+// returns -1 if a is less than b
+// returns 1 if a is greater than b
+func compare(a int, b int) int {
+	if a == b {
+		return 0
+	}
+	if a < b {
+		return -1
+	}
+	return 1
+}
+
+// order compares two items and returns the order between them in the list
+//
+// returns 0 if they are equal
+// returns -1 if a is before b
+// returns 1 if a is after b
+func order(a *LinkedItem, a_position int, b *LinkedItem, b_position int) int {
+	if a == b {
+		return compare(a_position, b_position)
+	}
+	if a == nil {
+		return -1
+	}
+	if b == nil {
+		return 1
+	}
+	after_a := a
+	after_b := b
+	for {
+		after_a = after_a.next
+		after_b = after_b.next
+		if after_a == b || after_b == nil {
+			return -1
+		}
+		if after_b == a || after_a == nil {
+			return 1
+		}
+	}
+}
+
 // integrate integrates the item in the document
 //
 // returns an error if the item is malformed
@@ -315,33 +439,27 @@ func (doc *Doc) integrate(item Item) error {
 	}
 	// The version also increase with the length of the item
 	doc.version[id.client] = id.seq + Seq(item.length-1)
-	left_item, left_index, err := doc.findItemFromId(item.origin_left)
+	left_item, left_position, err := doc.findItemFromId(item.origin_left)
 	if err != nil {
 		return fmt.Errorf("origin_left not found: %w", err)
 	}
-	var dest_item *LinkedItem = doc.content.head
-	var position = 0
+	dest_item := doc.content.head
+	dest_position := 0
 	if left_item != nil {
-		position = int(item.origin_left.seq - left_item.item.id.seq)
-		dest_item = left_item
 		// We will place the item after the left item
-		position++
-		if position > left_item.item.length-1 {
+		dest_item = left_item
+		dest_position = left_position + 1
+		if dest_position > left_item.item.length-1 {
 			// Go to the next item if we were already at the end of the left item
 			dest_item = dest_item.next
-			position = 0
+			dest_position = 0
 		}
 	}
-	var right_item *LinkedItem = nil
-	right_index := doc.content.count
-	if item.origin_right != nil {
-		right_item, right_index, err = doc.findItemFromId(item.origin_right)
-		if err != nil {
-			fmt.Println(item, item.origin_right)
-			return fmt.Errorf("origin_right not found: %w", err)
-		}
+	right_item, right_position, err := doc.findItemFromId(item.origin_right)
+	if err != nil {
+		return fmt.Errorf("origin_right not found: %w", err)
 	}
-	scanning := false
+	scanning := true
 	for other := dest_item; ; other = other.next {
 		if !scanning {
 			dest_item = other
@@ -349,64 +467,53 @@ func (doc *Doc) integrate(item Item) error {
 		if other == nil || other == right_item {
 			break
 		}
-		_, oleft_index, err := doc.findItemFromId(other.item.origin_left)
-		oleft_index += int(position)
+
+		oleft, oleft_position, err := doc.findItemFromId(other.item.origin_left)
 		if err != nil {
 			return fmt.Errorf("origin_left not found: %w", err)
 		}
-		oright_index := doc.content.count
-		if other.item.origin_right != nil {
-			_, oright_index, err = doc.findItemFromId(other.item.origin_right)
-			if err != nil {
-				fmt.Println(other.item.origin_right)
-				return fmt.Errorf("origin_right not found: %w", err)
+
+		oright, oright_position, err := doc.findItemFromId(other.item.origin_right)
+		if err != nil {
+			return fmt.Errorf("origin_right not found: %w", err)
+		}
+
+		// Fugue logic
+		order_left := order(oleft, oleft_position, left_item, left_position)
+		if order_left <= 0 {
+			order_right := order(oright, oright_position, right_item, right_position)
+			if order_left < 0 || (order_left == 0 && order_right == 0 && item.id.client < other.item.id.client) {
+				break
+			}
+			if order_left == 0 {
+				scanning = order_right < 0
 			}
 		}
-		if oleft_index < left_index || (oleft_index == left_index && oright_index == right_index && item.id.client < other.item.id.client) {
-			break
-		}
-		if oleft_index == left_index {
-			scanning = oright_index < right_index
-		}
-		// Search at the beginning of every new item
-		position = 0
+		dest_position = 0
 	}
 	if dest_item == nil {
 		// We insert at the end of the list
-		doc.content.insertAfter(doc.content.tail, item)
+		doc.insertAfter(doc.content.tail, item)
 		if doc.content.tail.canMergeLeft() {
 			// The new tail can be merged with the previous item
-			doc.content.mergeLeft(doc.content.tail)
+			err := doc.mergeLeft(doc.content.tail)
+			if err != nil {
+				return fmt.Errorf("error merging left: %w", err)
+			}
 		}
-		// Update the cache with the new items
-		cache_items := make([]*LinkedItem, item.length)
-		for i := range item.length {
-			cache_items[i] = doc.content.tail
-		}
-		if doc.cache[item.id.client] == nil {
-			doc.cache[item.id.client] = make([]*LinkedItem, 0)
-		}
-		doc.cache[item.id.client] = append(doc.cache[item.id.client], cache_items...)
 		return nil
 	}
 	// We insert in the rest of the list
-	_, middle, _, err := doc.content.insertAt(dest_item, int(position), item)
+	_, middle, _, err := doc.insertAt(dest_item, dest_position, item)
 	if err != nil {
 		return fmt.Errorf("error inserting item: %w", err)
 	}
 	if middle.canMergeLeft() {
-		doc.content.mergeLeft(middle)
-		middle = middle.prev
+		err := doc.mergeLeft(middle)
+		if err != nil {
+			return fmt.Errorf("error merging left: %w", err)
+		}
 	}
-	// Update the cache with the new items
-	cache_items := make([]*LinkedItem, item.length)
-	for i := range item.length {
-		cache_items[i] = middle
-	}
-	if doc.cache[item.id.client] == nil {
-		doc.cache[item.id.client] = make([]*LinkedItem, 0)
-	}
-	doc.cache[item.id.client] = append(doc.cache[item.id.client], cache_items...)
 	return nil
 }
 
@@ -488,7 +595,7 @@ func (dest *Doc) mergeFrom(from *Doc) error {
 			if !dest_item.item.deleted && from_item.item.contains(dest_item.item) {
 				// Split the item into three parts: before, the deleted part, and after
 				left_split_count := max(int(from_item.item.id.seq-dest_item.item.id.seq), 0)
-				left, middle_right, err1 := dest.content.splitTwo(dest_item, left_split_count)
+				left, middle_right, err1 := dest.splitTwo(dest_item, left_split_count)
 				if err1 != nil {
 					return fmt.Errorf("error splitting item: %w", err1)
 				}
@@ -498,12 +605,12 @@ func (dest *Doc) mergeFrom(from *Doc) error {
 					//dest.content.count -= left.item.length
 					// Try to merge with the previous item
 					if left.canMergeLeft() {
-						dest.content.mergeLeft(left)
+						dest.mergeLeft(left)
 					}
 					continue
 				}
 				deleted_item_count := dest_item.item.length - left_split_count + min(int(from_item.item.id.seq)+from_item.item.length-int(dest_item.item.id.seq)-dest_item.item.length, 0)
-				middle, _, err2 := dest.content.splitTwo(middle_right, deleted_item_count)
+				middle, _, err2 := dest.splitTwo(middle_right, deleted_item_count)
 				if err2 != nil {
 					return fmt.Errorf("error splitting item: %w", err2)
 				}
@@ -511,13 +618,13 @@ func (dest *Doc) mergeFrom(from *Doc) error {
 				//dest.content.count -= middle.item.length
 				if middle.canMergeLeft() {
 					// We can merge the deleted part with the previous item
-					dest.content.mergeLeft(middle)
+					dest.mergeLeft(middle)
 					// Move to the previous item, so that we can do merging in both directions
 					middle = middle.prev
 				}
 				if middle.canMergeRight() {
 					// We can merge the deleted part with the next item
-					dest.content.mergeRight(middle)
+					dest.mergeRight(middle)
 				}
 			}
 		}
@@ -542,14 +649,15 @@ func (doc *Doc) debugPrint() {
 	for client, seq := range doc.version {
 		fmt.Printf("Client: %d Seq: %d\n", client, seq)
 		for _, item := range doc.cache[client] {
-			fmt.Printf("Item: %d\n", item.item.id.seq)
+			fmt.Printf("%d ", item.item.id.seq)
 		}
+		fmt.Print("\n")
 		fmt.Println("---")
 	}
 }
 
 func main() {
-	doc := newDoc()
+	/*doc := newDoc()
 	doc.localInsert(0, 0, "\\")
 	doc.localInsert(0, 1, "d")
 	doc.localInsert(0, 2, "o")
@@ -600,6 +708,16 @@ func main() {
 	doc.localInsert(0, 47, "\n")
 	doc.localInsert(0, 48, "\\")
 	doc.localDelete(20, 1)
-	doc.debugPrint()
+	doc.debugPrint()*/
 	//fmt.Println(doc.getContent())
+	doc1 := newDoc()
+	fmt.Println(doc1.localInsert(1, 0, "a"))
+	fmt.Println(doc1.localInsert(1, 1, "b"))
+	fmt.Println(doc1.localDelete(0, 1))
+	doc1.debugPrint()
+	fmt.Println(doc1.localInsert(1, 0, "c"))
+	fmt.Println(doc1.localInsert(1, 1, "d"))
+	fmt.Println(doc1.localInsert(1, 1, "e"))
+	doc1.debugPrint()
+
 }

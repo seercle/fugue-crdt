@@ -24,14 +24,20 @@ if ask_user "Do you want to display the CPU profile?"; then
     cpu_profile=true
 fi
 
+# Ask if we want to display the memory profile
+memory_profile=false
+if ask_user "Do you want to display the memory profile?"; then
+    memory_profile=true
+fi
+
 # Ask if we want to display the time profile
 time_profile=false
 if ask_user "Do you want to display the time profile?"; then
     time_profile=true
 fi
 
-# If neither CPU nor time profile is selected and benchmark is not redone, exit
-if ! $redo_benchmark && ! $cpu_profile && ! $time_profile; then
+# If no actions are selected, exit
+if ! $redo_benchmark && ! $cpu_profile && ! $memory_profile && ! $time_profile; then
     echo "No actions selected. Exiting."
     exit 0
 fi
@@ -39,7 +45,7 @@ fi
 # If redo_benchmark is true, run the benchmark command
 if $redo_benchmark; then
     echo "Running benchmark command..."
-    go test -bench BenchmarkTrace -cpuprofile=temp/cpu.prof -benchtime=1x
+    go test -bench=BenchmarkTrace -run=^$ -cpuprofile=temp/cpu.prof -memprofile=temp/mem.prof -benchtime=1x
 
     # Remove the v0.test file if it exists
     if [ -f "v0.test" ]; then
@@ -54,6 +60,12 @@ fi
 if $cpu_profile; then
     echo "Displaying CPU profile..."
     (echo "web" | go tool pprof temp/cpu.prof) &
+fi
+
+# If memory profile is true, run `go tool pprof` and display the memory profile
+if $memory_profile; then
+    echo "Displaying memory profile..."
+    (echo "web" | go tool pprof temp/mem.prof) &
 fi
 
 # If time profile is true, run the Python script to display the time profile

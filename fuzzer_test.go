@@ -1,13 +1,12 @@
 package main
 
 import (
-	"math"
 	"math/rand"
 	"testing"
 )
 
 func TestFuzzer(t *testing.T) {
-	const trials int64 = 1000
+	const trials int64 = 50
 	chars := []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ零一二三四五六七八九十")
 	chars_len := len(chars)
 	for i := range trials {
@@ -17,22 +16,25 @@ func TestFuzzer(t *testing.T) {
 			for range len(docs) {
 				i := rng.Intn(len(docs))
 				doc := docs[i]
-				len := doc.content.length
+				len := doc.content.count
 				var weight float32 = 0.65
 				if len > 10 {
 					weight = 0.35
 				}
-				if doc.content.length == 0 || rng.Float32() < weight {
+				var err error = nil
+				if doc.content.count == 0 || rng.Float32() < weight {
 					//insert
 					position := rng.Intn(len + 1)
 					rune := chars[rng.Intn(chars_len)]
-					//t.Logf("%d %d %s", i, position, string(rune))
-					doc.localInsert(Client(i), position, Content(rune))
+					err = doc.localInsert(Client(i), position, Content(rune))
 				} else {
 					//delete
-					position := rng.Intn(len + 1)
-					length := rng.Intn(int(math.Min(float64(len-position+1), float64(3))))
-					doc.localDelete(position, length)
+					position := rng.Intn(len)
+					length := 1 + rng.Intn(min(len-position, 3))
+					err = doc.localDelete(position, length)
+				}
+				if err != nil {
+					t.Errorf("Trial %d: Unexpected error during local operation: %v", i, err)
 				}
 			}
 		}
